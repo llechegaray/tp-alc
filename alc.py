@@ -900,41 +900,6 @@ def restri_para_matrices(L, B, inferior=True):
 
 ########### FUNCIONES PARA EL TP ###########
 
-# Ejercicio 1
-
-"""""
-# 1)a) 
-Sabemos que Rango(Q) = dim(Im(Q)).
-Por Teorema de la Dimensión:
-dim(Nu(Q))  + dim(Im(Q)) = n donde n = Col(Q)
-dim(Nu(Q))  + Rango(Q) = 12
-Rango(Q) = 12 - dim(Nu(Q))
- Si m = (2, 4) => 2 (1, 2) entonces 2 es el factor de escala
- No puede ser opcion que el Nu(Q) = { (1, 0) y (0, 1)} porque entonces hay mas de un factor de escala ya que podemos representar el Nu(Q) como a (1, 0) + b(0,1) siendo a y b los factores de escala.
- Ademas, m != 0 porque necesitamos una solución no nula.
- Por lo tanto, dim(Nu(Q)) = 1, siendo la cuenta final: 
- Rango(Q) = 12 - dim(Nu(Q)) = 12 - 1 = 11
-
- Por otra parte, sabemos que Rango(Q) <= min(FilasQ, ColumnasQ) con FilasQ = 2n, ColumnasQ = 12
- Rango(Q) <= min(2n, 12)
- 11 <= min(2n, 12)
- 11 <= 2n
- 5,5 <= n, entonces n >= 6, 
- Como minimo va a ser necesario 6 puntos para asegurar la solucion 
-
-Finalmente, los puntos Pi = (Ui, Vi, Wi, 1) no deben ser coplanares, ya que si lo fueran pertenecerían a un mismo plano, 
-por tanto existiría un vector V = (a, b, c, d) no nulo tal que Pi * V daría 0 para todo i.
-Lo fuerte de esto es que un solo vector V anula los puntos Pi para todo i.
-Por lo tanto, existen 3 formas de escribir el vector M de 12 coordenadas de manera que Q*M = 0.
-Tenemos los vectores (de 12 coordenadas) z1 = (v, O, O), z2 = (O, v, O) y z3 = (O, O, v) 
-[donde O = (0, 0, 0, 0)] pertenecerían al núcleo de Q, ya que Qz1 = 0, Qz2 = 0 y Qz3 = 0 
-Lo que implicaría que dim(Nu(Q)) >= 3 y entonces el rango de Q seria 9 que es menor a 11.
-Y entonces hay infinitas soluciones no nulas.
-
- 1) b) El vector m se encuentra en la teoría con Q*m=0. En la práctica, usamos min||Q*m||² con ||m||=1, que es equivalente a min m^T*Q^T*Q*m con ||m||=1. El vector m buscado que hace que esa multiplicación dé lo más chica posible es el autovector asociado al menor autovalor de la matriz simétrica Q^T*Q.
-
-"""""
-
 # Ejercicio 2
 """"
 imgPts: array de (n, 2) con coordenadas (u, v) en pixeles.
@@ -959,11 +924,6 @@ def obtenerQ3d(imgPts, objPts):
         Q[2*i+1, 8:12] = [-v * U, -v * V, -v * W, -v]
 
     return Q
-    
-imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
-objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
-print(obtenerQ3d(imagen1, objeto1))
-#  A (m x r) =  U( m x r), S (r x r), V (n x r) 
 
 """"
 Q: matriz creada a partir de la ecuación 6
@@ -997,19 +957,20 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
                   [0, 1, 0],
                   [1, 0, 0]])
 
-    # Calculamos la matriz "espejada": P * KR^T * P
+    # Calculamos la matriz reversa con P * KR^T * P
     KR_t = traspuesta(KR)
     KR_rev = prodMat(P, prodMat(KR_t, P))
     
-    Q, R_mat =  QR_con_GS(KR_rev, tol=1e-12)
-    # K = P * R_mat^T * P
-    K = prodMat(P, prodMat(traspuesta(R_mat), P))
+    Q, R =  QR_con_GS(KR_rev, tol=1e-12)
+    # K = P * R^T * P
+    K = prodMat(P, prodMat(traspuesta(R), P))
     # R = P * Q^T * P
     R = prodMat(P, prodMat(traspuesta(Q), P))
 
     # Normalizar K
     K = K / K[2, 2]
 
+    # los signos de la diagonal deben ser positivos (son distancias)
     T_diag = np.zeros((3, 3))
     for i in range(3):
         if K[i, i] < 0:
@@ -1018,7 +979,7 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
             T_diag[i, i] = 1
 
     K = prodMat(K, T_diag)
-    R = prodMat(T_diag, R) # T_diag es su propia inversa
+    R = prodMat(T_diag, R) 
     
     inv_K = inversa_bis(K)
     t = prodMat(inv_K, Kt)
@@ -1035,11 +996,10 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
 """
     3a)
     Por Teorema de la Dimensión: Rg(Q) + dim(Nu(Q)) = 9. Para que el sistema homogéneo Q*h = 0 tenga una 
-    solución no nula única salvo por un factor de escala, el núcleo de Q debe tener dimensión 1. Por tanto,
+    solución no nula única salvo por un factor de escala, el núcleo de Q debe tener dimensión 1. Por lo tanto,
     Rg(Q) = 9 - 1 = 8. La matriz Q debe tener rango 8. Lo cual requiere que mínimo n = 4
 """
 
-    #3b)
 def obtenerQ2d(imgPts, objPts):
     n = imgPts.shape[0]
     Q = np.zeros((2 * n, 9)) # Creamos una matriz Q llena de ceros de dimensión 2nx9
@@ -1058,7 +1018,6 @@ def obtenerQ2d(imgPts, objPts):
 
     return Q
 
-    #3c)
 def calcular_vij(H, i, j):
     ci = H[:, i]
     cj = H[:, j]
@@ -1084,7 +1043,6 @@ def armarA(Hlst):
 
     return A
 
-    #3d)
 def calcularMatrizK2D(A):
     _, _, V = svd_reducida(A, k=6, tol=-1)
     b = V[:, -1]
@@ -1105,7 +1063,6 @@ def calcularMatrizK2D(A):
 
     return K
     
-    #3e)
 def obtenerPose2D(Hj, K):
     K_inv = inversa_bis(K)
     R_tilde = prodMat(K_inv, Hj)
@@ -1130,6 +1087,13 @@ def obtenerPose2D(Hj, K):
     R_ortho = prodMat(U, Vt)
 
     return R_ortho, t
+
+############################################ esto lo movi de lugar
+
+imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
+objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
+print(obtenerQ3d(imagen1, objeto1))
+#  A (m x r) =  U( m x r), S (r x r), V (n x r) 
 
 # Ejercicio 4
 
