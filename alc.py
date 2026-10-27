@@ -75,6 +75,16 @@ def producto_interno(x, y):
         suma += x[i] * y[i]
     return suma
 
+def prod_vectorial(u, v):
+    u_flat = u.reshape(3)
+    v_flat = v.reshape(3)
+    
+    w0 = u_flat[1] * v_flat[2] - u_flat[2] * v_flat[1]
+    w1 = u_flat[2] * v_flat[0] - u_flat[0] * v_flat[2]
+    w2 = u_flat[0] * v_flat[1] - u_flat[1] * v_flat[0]
+    
+    return np.array([w0, w1, w2])
+
 #LABO 1 
 
 # Recibe dos numeros x e y, y calcula el error de aproximar x usando y en float64.
@@ -1124,14 +1134,16 @@ def obtenerPose2D(Hj, K):
 
     r1 = lamb * k_c1
     r2 = lamb * k_c2
-    r3 = np.array([
-        r1[1, 0] * r2[2, 0] - r1[2, 0] * r2[1, 0],
-        r1[2, 0] * r2[0, 0] - r1[0, 0] * r2[2, 0],
-        r1[0, 0] * r2[1, 0] - r1[1, 0] * r2[0, 0],
-    ])
+    r3 = prod_vectorial(r1, r2)
+    tj = lamb * k_c3
 
+    R_temp = traspuesta(r1, r2, r3)
+    R = np.vstack(R_temp)
 
+    U, _, Vt = svd_reducida(R, k=3, tol=-1)
+    Rj = prodMat(U, Vt)
 
+    return Rj, tj
 
 # Ejercicio 4
 
