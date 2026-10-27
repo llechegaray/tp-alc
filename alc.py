@@ -1,16 +1,6 @@
-
-
-#%%
-
 import numpy as np
 
-#%%
-
 ########### FUNCIONES DEL MODULO ALC ###########
-
-#%%
-
-#FUNCIONES AUXILIARES 
 
 # Traspone una matriz A.
 def traspuesta(A):
@@ -39,10 +29,10 @@ def calcularAx_bis(A,x):
     return b
 
 # Calcula el producto matricial entre A y B.
-def prodMat(A, B):
-    return A @ B
+#def prodMat(A, B):
+#    return A @ B
 
-def prodMat_bis(A, B):
+def prodMat(A, B):
     A = np.array(A)
     B = np.array(B)
 
@@ -897,16 +887,6 @@ def svd_reducida_bis(A, k=50, tol=1e-10, K=2000):
 
         return U, Sig, V
 
-
-#%%
-
-########### FUNCIONES DEL TRABAJO PRACTICO ###########
-
-#%%
-
-# FUNCIONES AUXILIARES
-
-# Extiende la funcion res_tri para que pueda ser utilizada para matrices. 
 def restri_para_matrices(L, B, inferior=True): 
 
     f = L.shape[0] 
@@ -918,148 +898,243 @@ def restri_para_matrices(L, B, inferior=True):
     
     return R
 
+########### FUNCIONES PARA EL TP ###########
+
 # Ejercicio 1
 
-# Accede a la carpeta y extrae los archivos. Construye las matrices de entrenamiento y validacion.
-# Las correspondientes a X son matrices que contienen los embeddings de perros y gatos.
-# Las correspondientes a Y son matrices que contienen las clases de los embeddings almacenados en X.
-def cargarDataset (carpeta):
-    Pt = np.load(carpeta + '/train/dogs/efficientnet_b3_embeddings.npy')
-    Gt = np.load(carpeta + '/train/cats/efficientnet_b3_embeddings.npy')
-    Pv = np.load(carpeta + '/val/dogs/efficientnet_b3_embeddings.npy')
-    Gv = np.load(carpeta + '/val/cats/efficientnet_b3_embeddings.npy')
+"""""
+# 1)a) 
+Sabemos que Rango(Q) = dim(Im(Q)).
+Por Teorema de la Dimensión:
+dim(Nu(Q))  + dim(Im(Q)) = n donde n = Col(Q)
+dim(Nu(Q))  + Rango(Q) = 12
+Rango(Q) = 12 - dim(Nu(Q))
+ Si m = (2, 4) => 2 (1, 2) entonces 2 es el factor de escala
+ No puede ser opcion que el Nu(Q) = { (1, 0) y (0, 1)} porque entonces hay mas de un factor de escala ya que podemos representar el Nu(Q) como a (1, 0) + b(0,1) siendo a y b los factores de escala.
+ Ademas, m != 0 porque necesitamos una solución no nula.
+ Por lo tanto, dim(Nu(Q)) = 1, siendo la cuenta final: 
+ Rango(Q) = 12 - dim(Nu(Q)) = 12 - 1 = 11
 
-    Xt = np.zeros((np.shape(Gt)[0], np.shape(Pt)[1] + np.shape(Gt)[1]))
-    Xt [: , :np.shape(Gt)[1]] = Gt
-    Xt [: , np.shape(Gt)[1]:] = Pt
+ Por otra parte, sabemos que Rango(Q) <= min(FilasQ, ColumnasQ) con FilasQ = 2n, ColumnasQ = 12
+ Rango(Q) <= min(2n, 12)
+ 11 <= min(2n, 12)
+ 11 <= 2n
+ 5,5 <= n, entonces n >= 6, 
+ Como minimo va a ser necesario 6 puntos para asegurar la solucion 
 
-    Yt = np.zeros((2, np.shape(Pt)[1] + np.shape(Gt)[1]))
-    Yt [0 , : np.shape(Gt)[1]] = 1
-    Yt [1 , np.shape(Gt)[1]:] = 1
+Finalmente, los puntos Pi = (Ui, Vi, Wi, 1) no deben ser coplanares, ya que si lo fueran pertenecerían a un mismo plano, 
+por tanto existiría un vector V = (a, b, c, d) no nulo tal que Pi * V daría 0 para todo i.
+Lo fuerte de esto es que un solo vector V anula los puntos Pi para todo i.
+Por lo tanto, existen 3 formas de escribir el vector M de 12 coordenadas de manera que Q*M = 0.
+Tenemos los vectores (de 12 coordenadas) z1 = (v, O, O), z2 = (O, v, O) y z3 = (O, O, v) 
+[donde O = (0, 0, 0, 0)] pertenecerían al núcleo de Q, ya que Qz1 = 0, Qz2 = 0 y Qz3 = 0 
+Lo que implicaría que dim(Nu(Q)) >= 3 y entonces el rango de Q seria 9 que es menor a 11.
+Y entonces hay infinitas soluciones no nulas.
 
-    Xv = np.zeros((np.shape(Gv)[0], np.shape(Pv)[1] + np.shape(Gv)[1]))
-    Xv [: , :np.shape(Gv)[1]] = Gv
-    Xv [: , np.shape(Gv)[1]:] = Pv
+ 1) b) El vector m se encuentra en la teoría con Q*m=0. En la práctica, usamos min||Q*m||² con ||m||=1, que es equivalente a min m^T*Q^T*Q*m con ||m||=1. El vector m buscado que hace que esa multiplicación dé lo más chica posible es el autovector asociado al menor autovalor de la matriz simétrica Q^T*Q.
 
-    Yv = np.zeros((2, np.shape(Pv)[1] + np.shape(Gv)[1]))
-    Yv [0 , : np.shape(Gv)[1]] = 1
-    Yv [1 , np.shape(Gv)[1]:] = 1
-
-    return Xt, Yt, Xv, Yv
+"""""
 
 # Ejercicio 2
+""""
+imgPts: array de (n, 2) con coordenadas (u, v) en pixeles.
+objPts: array de (n, 3) con coordenadas (U, V, W) en el mundo real.
+Devuelve Q creada a partir de la ecuación 6
+"""
+def obtenerQ3d(imgPts, objPts): 
+    n = imgPts.shape[0]
+    Q = np.zeros((2 * n, 12)) # Creamos una matriz Q llena de ceros de dimensión 2nx12
 
-# Recibe L matriz de Cholesky. Retorna W calculada con ecuaciones normales.
-def pinvEcuacionesNormales(X, L, Y):
-    n, p = X.shape
+    # Iteramos sobre los puntos de las imagenes y los objetos
+    for i in range(n): # Llenamos la matriz Q en base a los n puntos
+        u, v = imgPts[i, 0], imgPts[i, 1]
+        U, V, W = objPts[i, 0], objPts[i, 1], objPts[i, 2]
 
-    Xt = traspuesta(X)
-    Lt = traspuesta(L)
+        # Filas pares
+        Q[2*i, 0:4] = [U, V, W, 1]
+        Q[2*i, 8:12] = [-u * U, -u * V, -u * W, -u]
 
-    if n > p:
-        Z = restri_para_matrices(Lt, Xt, inferior=True)
-        U = restri_para_matrices(L, Z, inferior=False)
-        Xpinv = U
+        #Fila impares
+        Q[2*i+1, 4:8] = [U, V, W, 1]
+        Q[2*i+1, 8:12] = [-v * U, -v * V, -v * W, -v]
 
-    elif n < p:
-        Z = restri_para_matrices(Lt, X, inferior=True)
-        V = restri_para_matrices(L, Z, inferior=False)
-        Xpinv = traspuesta(V)
+    return Q
+    
+imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
+objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
+print(obtenerQ3d(imagen1, objeto1))
+#  A (m x r) =  U( m x r), S (r x r), V (n x r) 
 
-    else:
-        Xpinv = inversa_bis(X)
+""""
+Q: matriz creada a partir de la ecuación 6
+Devuelve la matriz de proyección M
+"""
+def resolverDLT3D(Q):
 
-    W = prodMat(Y, Xpinv)
-    return W
+    # k el numero de valores singulares (y vectores) a retener
+    # con tolerancia negativa para no borrar valores chicos (que son los que nos importan)
+    _,_,V = svd_reducida(Q, k=12, tol=-1) 
+    
+    m = V[:,-1] # el autovector con el menor autovalor
+    M = m.reshape((3,4))
 
-# Ejercicio 3
+    return M
 
-# Recibe U, S, V matrices de la descomposicion SVD de X. Usa esto para calcular la matriz W.
-def pinvSVD(U, S, V, Y):
+""""
+M: matriz de proyección
+Devuelve la matriz de rotación R, el vector de traslación t y la matriz de parámetros intrínsecos K
+"""
+def devolverMatricesCalibracion3d(M, restriccion=False):
+    #Basandonos en la sección 2.1, extraemos R, t y K:
+    #M=K[R|t]=[KR|Kt]
+    KR = M[:, :3]
+    Kt = M[:, 3]
 
-    SigmaInv = np.diag(1 / S) 
+    # Factorización RQ usando QR 
+    
+    # Creamos la matriz de permutacion P
+    P = np.array([[0, 0, 1],
+                  [0, 1, 0],
+                  [1, 0, 0]])
 
-    n = SigmaInv.shape[0]
-    V1 = V[:, :n]
-    U1 = U[:, :n] 
+    # Calculamos la matriz "espejada": P * KR^T * P
+    KR_t = traspuesta(KR)
+    KR_rev = prodMat(P, prodMat(KR_t, P))
+    
+    Q, R_mat =  QR_con_GS(KR_rev, tol=1e-12)
+    # K = P * R_mat^T * P
+    K = prodMat(P, prodMat(traspuesta(R_mat), P))
+    # R = P * Q^T * P
+    R = prodMat(P, prodMat(traspuesta(Q), P))
 
-    VSigmaInv = prodMat(V1, SigmaInv)
-    Xpinv = prodMat(VSigmaInv, traspuesta(U1))
+    # Normalizar K
+    K = K / K[2, 2]
 
-    W = prodMat(Y, Xpinv)
+    T_diag = np.zeros((3, 3))
+    for i in range(3):
+        if K[i, i] < 0:
+            T_diag[i, i] = -1
+        else:
+            T_diag[i, i] = 1
 
-    return W
+    K = prodMat(K, T_diag)
+    R = prodMat(T_diag, R) # T_diag es su propia inversa
+    
+    inv_K = inversa_bis(K)
+    t = prodMat(inv_K, Kt)
+    
+    if restriccion:
+        K[0, 1] = 0 # Gamma (sesgo) = 0
+        promedio_focal = (K[0, 0] + K[1, 1]) / 2
+        K[0, 0] = promedio_focal
+        K[1, 1] = promedio_focal
+
+    return K, t, R
+    
+    # Ejercicio 3   
+"""
+    3a)
+    Por Teorema de la Dimensión: Rg(Q) + dim(Nu(Q)) = 9. Para que el sistema homogéneo Q*h = 0 tenga una 
+    solución no nula única salvo por un factor de escala, el núcleo de Q debe tener dimensión 1. Por tanto,
+    Rg(Q) = 9 - 1 = 8. La matriz Q debe tener rango 8. Lo cual requiere que mínimo n = 4
+"""
+
+    #3b)
+def obtenerQ2d(imgPts, objPts):
+    n = imgPts.shape[0]
+    Q = np.zeros((2 * n, 9)) # Creamos una matriz Q llena de ceros de dimensión 2nx9
+
+    for i in range(n): # Llenamos la matriz Q en base a los n puntos
+        u, v = imgPts[i, 0], imgPts[i, 1]
+        U, V = objPts[i, 0], objPts[i, 1]
+
+        # Filas pares
+        Q[2*i, 0:3] = [U, V, 1]
+        Q[2*i, 6:9] = [-u * U, -u * V, -u]
+
+        #Fila impares
+        Q[2*i+1, 3:6] = [U, V, 1]
+        Q[2*i+1, 6:9] = [-v * U, -v * V, -v]
+
+    return Q
+
+    #3c)
+def calcular_vij(H, i, j):
+    ci = H[:, i]
+    cj = H[:, j]
+    return np.array([ci[0] * cj[0], 
+                     ci[0] * cj[1] + ci[1] * cj[0], 
+                     ci[1] * cj[1], 
+                     ci[2] * cj[0] + ci[0] * cj[2], 
+                     ci[2] * cj[1] + ci[1] * cj[2], 
+                     ci[2] * cj[2]])
+
+def armarA(Hlst):
+    N = len(Hlst)
+    A = np.zeros((2 * N, 6))
+
+    for k in range(N):  
+        H = Hlst[k]
+        v12 = calcular_vij(H, 0, 1)
+        v11 = calcular_vij(H, 0, 0)
+        v22 = calcular_vij(H, 1, 1)
+
+        A[2 * k] = v12
+        A[2 * k + 1] = v11 - v22
+
+    return A
+
+    #3d)
+def calcularMatrizK2D(A):
+    _, _, V = svd_reducida(A, k=6, tol=-1)
+    b = V[:, -1]
+
+    B = np.array([[b[0], b[1], b[3]], #Re-construimos la matriz simétrica B
+                  [b[1], b[2], b[4]], 
+                  [b[3], b[4], b[5]]]
+                  )
+
+    if B[0, 0] < 0: #Garantizamos que B sea definida positiva
+        B = -B
+
+    L = calculaCholesky(B, tol=1e-10) # B = L @ L.T
+
+    Lt = traspuesta(L) 
+    K = inversa_bis(Lt) # K = (L.T)^-1 
+    K = K / K[2, 2] #Normalizamos K
+
+    return K
+    
+    #3e)
+def obtenerPose2D(Hj, K):
+    K_inv = inversa_bis(K)
+    R_tilde = prodMat(K_inv, Hj)
+
+    r1 = R_tilde[:, 0]
+    r2 = R_tilde[:, 1]
+    t = R_tilde[:, 2]
+
+    norm_r1 = norma(r1, 2)
+    norm_r2 = norma(r2, 2)
+    scale = (norm_r1 + norm_r2) / 2
+
+    r1 /= scale
+    r2 /= scale
+    t /= scale
+
+    r3 = np.cross(r1, r2)
+
+    R = np.column_stack((r1, r2, r3))
+
+    U, _, Vt = QR_con_HH(R)
+    R_ortho = prodMat(U, Vt)
+
+    return R_ortho, t
 
 # Ejercicio 4
 
-# a)
-
-# Recibe las matrices QR calculadas con reflexiones de Householder. Calcula W.
-def pinvHouseHolder(X, Q, R, Y):
-    m, n = X.shape
-
-    if Y.shape[1] != n:
-        if Y.shape[0] == n:
-            Y = traspuesta(Y)
-
-    R1 = R[:m, :m]
-    Q1 = Q[:, :m]    
-
-    T = prodMat(traspuesta(Q1), traspuesta(Y))
-
-    S = restri_para_matrices(traspuesta(R1), T, inferior=True)
-
-    W = traspuesta(S)
-
-    return W
-
-# b)
-
-# Recibe las matrices QR calculadas con Gram Schmidt. Calcula W.
-def pinvGramSchmidt(Xt, Q, R, Y):
-
-    RT_inv = inversa_bis(traspuesta(R))
-    X_pinv = prodMat(Q, RT_inv)
-
-    W = prodMat(Y, X_pinv)
-    return W
-
 # Ejercicio 5
 
-# Recibe dos matrices y evalua si verifican las condiciones de la pseudoinversa de Moore-Penrose.
-def esPseudoInversa(X, pX, tol=1e-8):
+# Ejercicio 6
 
-    res = True
-
-    XpX = prodMat(X,pX)
-    XpXX = prodMat(XpX,X)
-    XpXt = traspuesta(XpX)
-
-    pXX = prodMat(pX,X)
-    pXXpX = prodMat(pXX,pX)
-    pXXt = traspuesta(pXX)
-
-    # Para que pX sea la pseudo-inversa de X, se deben cumplir 4 condiciones:
-
-    # Condición 1: X.pX.X = X
-
-    if norma(XpXX - X,2) >= tol:
-        res = False
-
-    # Condición 2: pX.X.pX = pX
-
-    if norma(pXXpX - pX,2) >= tol:
-        res = False
-
-    # Condición 3: (XpX)^T = XpX
-
-    if norma(XpXt - XpX,2) >= tol:
-        res = False
-
-    # Condición 4: (pXX)^T = pXX
-
-    if norma(pXXt - pXX,2) >= tol:
-        res = False
-
-    return res
 
