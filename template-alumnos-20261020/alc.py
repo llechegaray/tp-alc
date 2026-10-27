@@ -1104,10 +1104,10 @@ def obtenerPose2D(Hj, K):
 
 ############################################ esto lo movi de lugar
 
-imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
-objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
-print(obtenerQ3d(imagen1, objeto1))
-#  A (m x r) =  U( m x r), S (r x r), V (n x r) 
+#   imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
+    objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
+    print(obtenerQ3d(imagen1, objeto1))
+#   A (m x r) =  U( m x r), S (r x r), V (n x r) 
 
 # Ejercicio 4
 
