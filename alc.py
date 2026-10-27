@@ -75,6 +75,16 @@ def producto_interno(x, y):
         suma += x[i] * y[i]
     return suma
 
+def prod_vectorial(u, v):
+    u_flat = u.reshape(3)
+    v_flat = v.reshape(3)
+    
+    w0 = u_flat[1] * v_flat[2] - u_flat[2] * v_flat[1]
+    w1 = u_flat[2] * v_flat[0] - u_flat[0] * v_flat[2]
+    w2 = u_flat[0] * v_flat[1] - u_flat[1] * v_flat[0]
+    
+    return np.array([w0, w1, w2])
+
 #LABO 1 
 
 # Recibe dos numeros x e y, y calcula el error de aproximar x usando y en float64.
@@ -1064,29 +1074,33 @@ def calcularMatrizK2D(A):
     return K
     
 def obtenerPose2D(Hj, K):
+
+    if Hj[2, 2] < 0: #(t_z > 0) Garantiza que el tablero quede delante de la cámara
+        H = -Hj
+    else:
+        H = Hj
+
+    c1, c2, c3 = H[:, 0], H[:, 1], H[:, 2]
+
     K_inv = inversa_bis(K)
-    R_tilde = prodMat(K_inv, Hj)
+    k_c1 = prodMat(K_inv, c1)
+    k_c2 = prodMat(K_inv, c2)
+    k_c3 = prodMat(K_inv, c3)
 
-    r1 = R_tilde[:, 0]
-    r2 = R_tilde[:, 1]
-    t = R_tilde[:, 2]
+    lamb = 1 / norma(k_c1, 2) #Factor de escala
 
-    norm_r1 = norma(r1, 2)
-    norm_r2 = norma(r2, 2)
-    scale = (norm_r1 + norm_r2) / 2
+    r1 = lamb * k_c1
+    r2 = lamb * k_c2
+    r3 = prod_vectorial(r1, r2)
+    tj = lamb * k_c3
 
-    r1 /= scale
-    r2 /= scale
-    t /= scale
+    R_temp = traspuesta(r1, r2, r3)
+    R = np.vstack(R_temp)
 
-    r3 = np.cross(r1, r2)
+    U, _, Vt = svd_reducida(R, k=3, tol=-1)
+    Rj = prodMat(U, Vt)
 
-    R = np.column_stack((r1, r2, r3))
-
-    U, _, Vt = QR_con_HH(R)
-    R_ortho = prodMat(U, Vt)
-
-    return R_ortho, t
+    return Rj, tj
 
 ############################################ esto lo movi de lugar
 
