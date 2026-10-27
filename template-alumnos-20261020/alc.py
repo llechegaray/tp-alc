@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 ########### FUNCIONES DEL MODULO ALC ###########
 
@@ -1112,6 +1113,39 @@ def obtenerPose2D(Hj, K):
 # Ejercicio 4
 
 # Ejercicio 5
+#machan
+
+#5a
+#Leer el archivo csv
+df = pd.read.csv('salguero/world_img_pts.csv', sep=';')
+datos = np.asarray(df)
+
+objPts = datos[:, 1:3] #Coordenadas (X, Y) de los 5 puntos, Matirz de (5,2)
+
+H_lista= []
+
+#Usamos Método de Zhang (Ejercicio 3 del TP) para obtener la matriz K
+
+for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada uno
+    u = 4 + 2 * i
+    v = 4 + 2 * i + 1
+    imgPts = datos[:, u:v+1] # (uk, vk) coordenadas de los 5 puntos en la imagen k
+
+    Q2d = obtenerQ2d(imgPts, objPts)
+
+    _,_,V = svd_reducida(Q2d, k=9, tol=-1)
+    h = V[:,-1] # el vector singular asociado al menor valor singular
+    Hk = h.reshape((3,3))
+
+    H_lista.append(Hk)
+
+    A_Zhang = armarA(H_lista)
+    K = calcularMatrizK2D(A_Zhang)
+#5b
+
+
+
+#5c
 
 # Ejercicio 6
 
