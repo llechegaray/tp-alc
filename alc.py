@@ -1107,29 +1107,31 @@ def calcularMatrizK2D(A):
     
     #3e)
 def obtenerPose2D(Hj, K):
+
+    if Hj[2, 2] < 0: #(t_z > 0) Garantiza que el tablero quede delante de la cámara
+        H = -Hj
+    else:
+        H = Hj
+
+    c1, c2, c3 = H[:, 0], H[:, 1], H[:, 2]
+
     K_inv = inversa_bis(K)
-    R_tilde = prodMat(K_inv, Hj)
+    k_c1 = prodMat(K_inv, c1)
+    k_c2 = prodMat(K_inv, c2)
+    k_c3 = prodMat(K_inv, c3)
 
-    r1 = R_tilde[:, 0]
-    r2 = R_tilde[:, 1]
-    t = R_tilde[:, 2]
+    lamb = 1 / norma(k_c1, 2) #Factor de escala
 
-    norm_r1 = norma(r1, 2)
-    norm_r2 = norma(r2, 2)
-    scale = (norm_r1 + norm_r2) / 2
+    r1 = lamb * k_c1
+    r2 = lamb * k_c2
+    r3 = np.array([
+        r1[1, 0] * r2[2, 0] - r1[2, 0] * r2[1, 0],
+        r1[2, 0] * r2[0, 0] - r1[0, 0] * r2[2, 0],
+        r1[0, 0] * r2[1, 0] - r1[1, 0] * r2[0, 0],
+    ])
 
-    r1 /= scale
-    r2 /= scale
-    t /= scale
 
-    r3 = np.cross(r1, r2)
 
-    R = np.column_stack((r1, r2, r3))
-
-    U, _, Vt = QR_con_HH(R)
-    R_ortho = prodMat(U, Vt)
-
-    return R_ortho, t
 
 # Ejercicio 4
 
