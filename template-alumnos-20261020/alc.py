@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 
 ########### FUNCIONES DEL MODULO ALC ###########
 
@@ -17,10 +16,10 @@ def traspuesta_bis(A):
     return T
 
 # Calcula Ax = b.
-def calcularAx(A,x):
-    return A @ x
+#def calcularAx(A,x):
+#    return A @ x
 
-def calcularAx_bis(A,x):
+def calcularAx(A,x):
     n, m = np.shape(A)
     b = np.zeros(n) 
 
@@ -370,20 +369,6 @@ def inversa(A):
         inv[:, i] = x
     
     return inv
-
-# Usamos la funcion de numpy ya que es realmente muy costoso usar la version del modulo.
-def inversa_bis(A):
-    if A is None:
-        return None
-    
-    A = A.astype(float)
-    
-    f, c = A.shape
-    
-    if f != c:
-        return None
-
-    return np.linalg.inv(A)
 
 # Calcula el determinante de A por regla de las diagonales.
 def determinante(A):
@@ -961,39 +946,21 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
     KR = M[:, :3]
     Kt = M[:, 3]
 
-    # Factorización RQ usando QR 
+    # Eliminamos R multiplicando la inversa traspuesta por si misma:
+    # (KR^-1)^T * (KR^-1) = rho^2 * K^-T * K^-1
+    inv_KR = inversa(KR)
+    A = prodMat(traspuesta(inv_KR), inv_KR)
+    # Cholesky: A = L * L^T, donde L = rho * K^-T
+    L = calculaCholesky(A)
+    L_T = traspuesta(L)
+    inv_LT = inversa(L_T)
+    # Como inv_LT = (1/rho) * K y K[2,2] = 1, recuperamos la escala rho
+    rho = 1.0 / inv_LT[2, 2]
+    K = inv_LT * rho
     
-    # Creamos la matriz de permutacion P
-    P = np.array([[0, 0, 1],
-                  [0, 1, 0],
-                  [1, 0, 0]])
-
-    # Calculamos la matriz reversa con P * KR^T * P
-    KR_t = traspuesta(KR)
-    KR_rev = prodMat(P, prodMat(KR_t, P))
-    
-    Q, R =  QR_con_GS(KR_rev, tol=1e-12)
-    # K = P * R^T * P
-    K = prodMat(P, prodMat(traspuesta(R), P))
-    # R = P * Q^T * P
-    R = prodMat(P, prodMat(traspuesta(Q), P))
-
-    # Normalizar K
-    K = K / K[2, 2]
-
-    # los signos de la diagonal deben ser positivos (son distancias)
-    T_diag = np.zeros((3, 3))
-    for i in range(3):
-        if K[i, i] < 0:
-            T_diag[i, i] = -1
-        else:
-            T_diag[i, i] = 1
-
-    K = prodMat(K, T_diag)
-    R = prodMat(T_diag, R) 
-    
-    inv_K = inversa_bis(K)
-    t = prodMat(inv_K, Kt)
+    inv_K = inversa(K)
+    R = prodMat(inv_K, rho * KR)
+    t = prodMat(inv_K, rho * Kt)
     
     if restriccion:
         K[0, 1] = 0 # Gamma (sesgo) = 0
@@ -1001,7 +968,7 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
         K[0, 0] = promedio_focal
         K[1, 1] = promedio_focal
 
-    return K, t, R
+    return R, t, K
     
     # Ejercicio 3   
 """
@@ -1028,6 +995,15 @@ def obtenerQ2d(imgPts, objPts):
         Q[2*i+1, 6:9] = [-v * U, -v * V, -v]
 
     return Q
+
+def resolverHomografia(objPts, imgPts):
+    Q = obtenerQ2d(imgPts, objPts)
+    _, _, V = svd_reducida(Q, k=9, tol=-1)
+    h = V[:, -1]
+    H = h.reshape((3, 3))
+    if H[2, 2] != 0:
+        H = H / H[2, 2]
+    return H
 
 def calcular_vij(H, i, j):
     ci = H[:, i]
@@ -1069,7 +1045,7 @@ def calcularMatrizK2D(A):
     L = calculaCholesky(B, tol=1e-10) # B = L @ L.T
 
     Lt = traspuesta(L) 
-    K = inversa_bis(Lt) # K = (L.T)^-1 
+    K = inversa(Lt) # K = (L.T)^-1 
     K = K / K[2, 2] #Normalizamos K
 
     return K
@@ -1078,12 +1054,10 @@ def obtenerPose2D(Hj, K):
 
     if Hj[2, 2] < 0: #(t_z > 0) Garantiza que el tablero quede delante de la cámara
         H = -Hj
-    else:
-        H = Hj
 
     c1, c2, c3 = H[:, 0], H[:, 1], H[:, 2]
 
-    K_inv = inversa_bis(K)
+    K_inv = inversa(K)
     k_c1 = prodMat(K_inv, c1)
     k_c2 = prodMat(K_inv, c2)
     k_c3 = prodMat(K_inv, c3)
@@ -1095,24 +1069,19 @@ def obtenerPose2D(Hj, K):
     r3 = prod_vectorial(r1, r2)
     tj = lamb * k_c3
 
-    R_temp = traspuesta(r1, r2, r3)
-    R = np.vstack(R_temp)
+    R_temp = np.array([r1, r2, r3]).T
 
-    U, _, Vt = svd_reducida(R, k=3, tol=-1)
-    Rj = prodMat(U, Vt)
+    # Factorizacion QR por Gram schmit para asegurarnos que R cumpla ser ortonormal
+    Q, _ = QR_con_GS(R_temp)
+    Rj = Q
 
     return Rj, tj
-
-############################################ esto lo movi de lugar
-
-#   imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
-    objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
-    print(obtenerQ3d(imagen1, objeto1))
-#   A (m x r) =  U( m x r), S (r x r), V (n x r) 
 
 # Ejercicio 4
 
 # Ejercicio 5
+
+
 #machan
 
 #5a
@@ -1143,10 +1112,27 @@ for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada u
     K = calcularMatrizK2D(A_Zhang)
 #5b
 
+# MARIANO MOVELO A LA NOTEBOOK PLSSSS ADEMAS pd.read.csv NO ESTA ENTRE LAS FUNC PERMITIDAS
 
 
 #5c
 
 # Ejercicio 6
 
+def calculoLambdaMu(I0, J0):
+    """
+    Calcula los parametros lambda y mu de la ec. 16 para el caso coplanar de POSIT.
+    Devuelve la parte real e imaginaria de las raices cuadradas del numero complejo C^2.
+    """
+    I0 = np.asarray(I0, dtype=np.float64)
+    J0 = np.asarray(J0, dtype=np.float64)
+    normI2 = np.sum(I0**2)
+    normJ2 = np.sum(J0**2)
+    I0dotJ0 = np.sum(I0 * J0)
+
+    C2 = (normJ2 - normI2) - 2j * I0dotJ0
+    C = np.sqrt(C2)
+    lam = np.real(C)
+    mu = np.imag(C)
+    return lam, mu
 
