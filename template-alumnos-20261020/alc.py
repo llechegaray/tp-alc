@@ -20,10 +20,10 @@ def traspuesta_bis(A):
     return T
 
 # Calcula Ax = b.
-def calcularAx(A,x):
-    return A @ x
+#def calcularAx(A,x):
+#    return A @ x
 
-def calcularAx_bis(A,x):
+def calcularAx(A,x):
     n, m = np.shape(A)
     b = np.zeros(n) 
 
@@ -373,20 +373,6 @@ def inversa(A):
         inv[:, i] = x
     
     return inv
-
-# Usamos la funcion de numpy ya que es realmente muy costoso usar la version del modulo.
-def inversa_bis(A):
-    if A is None:
-        return None
-    
-    A = A.astype(float)
-    
-    f, c = A.shape
-    
-    if f != c:
-        return None
-
-    return np.linalg.inv(A)
 
 # Calcula el determinante de A por regla de las diagonales.
 def determinante(A):
@@ -964,39 +950,21 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
     KR = M[:, :3]
     Kt = M[:, 3]
 
-    # Factorización RQ usando QR 
+    # Eliminamos R multiplicando la inversa traspuesta por si misma:
+    # (KR^-1)^T * (KR^-1) = rho^2 * K^-T * K^-1
+    inv_KR = inversa(KR)
+    A = prodMat(traspuesta(inv_KR), inv_KR)
+    # Cholesky: A = L * L^T, donde L = rho * K^-T
+    L = calculaCholesky(A)
+    L_T = traspuesta(L)
+    inv_LT = inversa(L_T)
+    # Como inv_LT = (1/rho) * K y K[2,2] = 1, recuperamos la escala rho
+    rho = 1.0 / inv_LT[2, 2]
+    K = inv_LT * rho
     
-    # Creamos la matriz de permutacion P
-    P = np.array([[0, 0, 1],
-                  [0, 1, 0],
-                  [1, 0, 0]])
-
-    # Calculamos la matriz reversa con P * KR^T * P
-    KR_t = traspuesta(KR)
-    KR_rev = prodMat(P, prodMat(KR_t, P))
-    
-    Q, R =  QR_con_GS(KR_rev, tol=1e-12)
-    # K = P * R^T * P
-    K = prodMat(P, prodMat(traspuesta(R), P))
-    # R = P * Q^T * P
-    R = prodMat(P, prodMat(traspuesta(Q), P))
-
-    # Normalizar K
-    K = K / K[2, 2]
-
-    # los signos de la diagonal deben ser positivos (son distancias)
-    T_diag = np.zeros((3, 3))
-    for i in range(3):
-        if K[i, i] < 0:
-            T_diag[i, i] = -1
-        else:
-            T_diag[i, i] = 1
-
-    K = prodMat(K, T_diag)
-    R = prodMat(T_diag, R) 
-    
-    inv_K = inversa_bis(K)
-    t = prodMat(inv_K, Kt)
+    inv_K = inversa(K)
+    R = prodMat(inv_K, rho * KR)
+    t = prodMat(inv_K, rho * Kt)
     
     if restriccion:
         K[0, 1] = 0 # Gamma (sesgo) = 0
@@ -1004,7 +972,7 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
         K[0, 0] = promedio_focal
         K[1, 1] = promedio_focal
 
-    return K, t, R
+    return R, t, K
     
     # Ejercicio 3   
 """
@@ -1031,6 +999,15 @@ def obtenerQ2d(imgPts, objPts):
         Q[2*i+1, 6:9] = [-v * U, -v * V, -v]
 
     return Q
+
+def resolverHomografia(objPts, imgPts):
+    Q = obtenerQ2d(imgPts, objPts)
+    _, _, V = svd_reducida(Q, k=9, tol=-1)
+    h = V[:, -1]
+    H = h.reshape((3, 3))
+    if H[2, 2] != 0:
+        H = H / H[2, 2]
+    return H
 
 def calcular_vij(H, i, j):
     ci = H[:, i]
@@ -1072,7 +1049,7 @@ def calcularMatrizK2D(A):
     L = calculaCholesky(B, tol=1e-10) # B = L @ L.T
 
     Lt = traspuesta(L) 
-    K = inversa_bis(Lt) # K = (L.T)^-1 
+    K = inversa(Lt) # K = (L.T)^-1 
     K = K / K[2, 2] #Normalizamos K
 
     return K
@@ -1081,12 +1058,10 @@ def obtenerPose2D(Hj, K):
 
     if Hj[2, 2] < 0: #(t_z > 0) Garantiza que el tablero quede delante de la cámara
         H = -Hj
-    else:
-        H = Hj
 
     c1, c2, c3 = H[:, 0], H[:, 1], H[:, 2]
 
-    K_inv = inversa_bis(K)
+    K_inv = inversa(K)
     k_c1 = prodMat(K_inv, c1)
     k_c2 = prodMat(K_inv, c2)
     k_c3 = prodMat(K_inv, c3)
@@ -1098,11 +1073,11 @@ def obtenerPose2D(Hj, K):
     r3 = prod_vectorial(r1, r2)
     tj = lamb * k_c3
 
-    R_temp = traspuesta(r1, r2, r3)
-    R = np.vstack(R_temp)
+    R_temp = np.array([r1, r2, r3]).T
 
-    U, _, Vt = svd_reducida(R, k=3, tol=-1)
-    Rj = prodMat(U, Vt)
+    # Factorizacion QR por Gram schmit para asegurarnos que R cumpla ser ortonormal
+    Q, _ = QR_con_GS(R_temp)
+    Rj = Q
 
     return Rj, tj
 
@@ -1353,6 +1328,8 @@ def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositiv
 
 
 # Ejercicio 5
+
+
 #machan
 
 #5a
@@ -1383,10 +1360,162 @@ for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada u
     K = calcularMatrizK2D(A_Zhang)
 #5b
 
+# MARIANO MOVELO A LA NOTEBOOK PLSSSS ADEMAS pd.read.csv NO ESTA ENTRE LAS FUNC PERMITIDAS
 
 
 #5c
 
 # Ejercicio 6
 
+def calculoLambdaMu(I0, J0):
+    """
+    Calcula los parametros lambda y mu de la ec. 16 
+    Devuelve la parte real e imaginaria de las raices cuadradas del numero complejo C^2.
+    """
+    normaI2 = norma(I0, 2)**2
+    normaJ2 = norma(J0, 2)**2
+    I0J0 = producto_interno(I0, J0)
+
+    # C^2 = (||J_0||^2 - ||I_0||^2) - 2i (I_0 . J_0)
+    C2 = (normaJ2 - normaI2) - 2j * I0J0
+    C = np.sqrt(C2)
+
+    lam = np.real(C)
+    mu = np.imag(C)
+
+    return lam, mu
+
+def calcularSalidaPOSIT(Is, Js, fx, m0, M0=None):
+    """
+    Devuelve la pose (i, j, k, Z0, R, t) correspondiente a una solucion (Is, Js) de POSIT.
+    """
+    normaI = norma(Is, 2)
+    normaJ = norma(Js, 2)
+    Z0 = fx / normaI
+    i_vec = Is / normaI
+    j_vec = Js / normaJ
+    k_vec = prod_vectorial(i_vec, j_vec)
+    R = np.zeros((3, 3))
+    R[0, :] = i_vec
+    R[1, :] = j_vec
+    R[2, :] = k_vec
+
+    x0 = m0[0]
+    y0 = m0[1]
+    t = np.array([Z0 * x0 / fx, Z0 * y0 / fx, Z0])
+
+    if M0 is not None and np.sum(np.abs(M0)) > 0:
+        t = t - prodMat(R, M0)
+
+    return i_vec, j_vec, k_vec, Z0, R, t
+
+def evaluarPose(R, t, obj_vecs, img_vecs, K):
+    """
+    Evalua una pose (R, t) proyectando obj_vecs y comparando con img_vecs.
+    Devuelve la cantidad de proyecciones validas (Zi > 0) y el RMS obtenido.
+    """
+    n = len(obj_vecs)
+    validas = 0
+    rmse = 0.0
+
+    for i in range(n):
+        # Punto 3D a coordenadas de cámara
+        Pc = prodMat(R, obj_vecs[i]) + t
+        
+        if Pc[2] > 0:
+            validas += 1
+            
+            # Proyección a imagen (usando K)
+            p_img_homog = prodMat(K, Pc)
+            u_proj = p_img_homog[0] / p_img_homog[2]
+            v_proj = p_img_homog[1] / p_img_homog[2]
+                
+            # Error cuadrático
+            error_u = u_proj - img_vecs[i, 0]
+            error_v = v_proj - img_vecs[i, 1]
+            rmse += (error_u**2 + error_v**2)
+        else:
+            rmse += 1e8
+        
+    rmse = np.sqrt(rmse / n)
+    return validas, rmse
+
+def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt=20, atol=1e-4):
+    """
+    Aplica el algoritmo POSIT coplanar para estimar la pose (R y t) de la camara.
+    Itera hasta MaxIt iteraciones o convergencia en RMS.
+    """
+
+    fx = K[0, 0]
+    fy = K[1, 1]
+    cu = K[0, 2]
+    cv = K[1, 2]
+
+    # Coordenadas centradas con correccion de relacion de aspecto
+    x_img = img_vecs[:, 0] - cu
+    y_img = (img_vecs[:, 1] - cv) * (fx / fy)
+
+    M0 = obj_vecs[0]
+    m0 = [x_img[0], y_img[0]]
+
+    # Vectores relativos a M0
+    A = obj_vecs[1:] - M0
+    n_pts = len(A)
+
+    # Pseudoinversa de A usando SVD reducida: A+ = V Sig^-1 U^T
+    U_a, Sig_a, V_a = svd_reducida(A, k=2, tol=1e-12)
+    Sig_inv = np.diag(1.0 / Sig_a)
+    A_pinv = prodMat(prodMat(V_a, Sig_inv), traspuesta(U_a))
+
+    # Vector normal unitario al plano de los puntos (nucleo de A)
+    n_vec = np.array([0.0, 0.0, 1.0])
+
+    eps = np.zeros(n_pts)
+    prev_rms = 1e9
+    best_R = None
+    best_t = None
+
+    for it in range(MaxIt):
+        b_u = x_img[1:] * (1.0 + eps) - m0[0]
+        b_v = y_img[1:] * (1.0 + eps) - m0[1]
+
+        I0 = prodMat(A_pinv, b_u)
+        J0 = prodMat(A_pinv, b_v)
+
+        lam, mu = calculoLambdaMu(I0, J0)
+
+        sol_A = (I0 + lam * n_vec, J0 + mu * n_vec)
+        sol_B = (I0 - lam * n_vec, J0 - mu * n_vec)
+
+        iter_best_rms = 1e9
+        iter_best_R = None
+        iter_best_t = None
+        iter_best_k = None
+        iter_best_Z0 = None
+
+        for Is, Js in [sol_A, sol_B]:
+            i_v, j_v, k_v, Z0, R_cand, t_cand = calcularSalidaPOSIT(Is, Js, fx, m0, M0)
+            valid, rms = evaluarPose(R_cand, t_cand, obj_vecs, img_vecs, K)
+            if valid == len(obj_vecs) and rms < iter_best_rms:
+                iter_best_rms = rms
+                iter_best_R = R_cand
+                iter_best_t = t_cand
+                iter_best_k = k_v
+                iter_best_Z0 = Z0
+
+        if iter_best_R is None:
+            break
+
+        best_R = iter_best_R
+        best_t = iter_best_t
+
+        diff_rms = np.abs(prev_rms - iter_best_rms)
+        if diff_rms < atol:
+            break
+        prev_rms = iter_best_rms
+
+        # Actualizar factores de correccion de perspectiva eps_i
+        eps = prodMat(A, iter_best_k) / iter_best_Z0
+
+    return best_R, best_t
 
