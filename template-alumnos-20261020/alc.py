@@ -1,5 +1,8 @@
 import numpy as np
 import pandas as pd
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+import math
 
 ########### FUNCIONES DEL MODULO ALC ###########
 
@@ -1103,14 +1106,251 @@ def obtenerPose2D(Hj, K):
 
     return Rj, tj
 
-############################################ esto lo movi de lugar
+############################################ 
 
-#   imagen1 = "template-alumnos-20261020/calib/3d/img_0001.jpg"
-    objeto1 = "template-alumnos-20261020/calib/3d/detected_corners.txt"
-    print(obtenerQ3d(imagen1, objeto1))
-#   A (m x r) =  U( m x r), S (r x r), V (n x r) 
+# Ejercicio 4 
 
-# Ejercicio 4
+# 4a
+# Pasos usados para calcular la distancia entre la posicion de un jugador y la linea del arco
+# 1) Encontrar homografia H^(-1)
+# 2) Llevar los pies de un jugador a la cancha: Evaluar H^(-1) [u v 1] = [U V w] para pasar de coordenas de la imagen (u,v) a coordenadas de las cancha (U,V). El resultado está en coordenadas homogeneas. Para recuperar las coordenadas reales de la cancha, dividimos por la tercera componente:
+# Ue = U / w, Ve = V / w => Obtenemos los valores del mundo real de los pies de enzo: [Ue, Ve, 1]
+# Usamos los pies porque el punto que buscamos debe pertenecer al plano de la cancha
+# 3) Calcular la distancia en linea recta del jugador a la linea del arco):  La formula que usamos para calcular la distancia en linea recta sobre el piso es la euclídea, donde calculamos la distancia al punto mas cercano del segmento del arco, que puede ser uno de los palos o un punto entre ellos
+
+
+"""
+    Calcula la homografia H que transforma puntos del mundo real (U, V) a puntos de la imagen (u, v).
+
+    imgPts: puntos de la imagen, de dimension Nx2.
+    objPts: puntos del mundo real, de dimension Nx2.
+
+    Devuelve H, una matriz de 3x3.
+"""
+def calcularHomografia2D(imgPts, objPts):
+
+    Q = obtenerQ2d(imgPts, objPts)
+
+    # Resolvemos Qh = 0 mediante SVD
+    _, _, V = svd_reducida(Q, k=9, tol=-1)
+
+    # La solucion es el vector asociado al menor valor singular 
+    h = V[:, -1]
+
+    H = h.reshape(3, 3)
+
+    # Normalizamos la homografia 
+    H = H / H[2, 2]
+
+    return H
+
+"""
+    Transforma un punto de la imagen (u, v) a coordenadas de la cancha (U, V)
+
+    H transforma coordenadas de la cancha a la imagen.
+"""
+def transformarPuntoCancha(H, imgPts):
+
+    H_inv = inversa_bis(H)
+
+    # Convertimos el punto a coordenadas homogeneas
+    p = np.array([imgPts[0], imgPts[1], 1.0])
+
+    # [U V w] = H^(-1) * [u v 1] 
+    pCancha = prodMat(H_inv, p)
+
+    # Normalizamos las coordenadas homogeneas: [U V w] / w => [U/w V/w 1]
+    U = pCancha[0] / pCancha[2]
+    V = pCancha[1] / pCancha[2]
+
+    return U, V
+
+"""
+    Calcula la distancia, sobre el piso, desde los pies del jugador hasta el arco
+
+    H: homografía
+    imgPts: coordenadas (u, v) de los pies en la imagen.
+
+    Devuelve la distancia en metros
+"""
+def distanciaPiesArco(H, imgPts):
+
+    # Transformamos los pies desde la imagen hasta la cancha
+    # (U, V): posicion de los pies del jugador
+    U, V = transformarPuntoCancha(H, imgPts)
+
+    # Cancha: 105 x 68 m
+    U_cancha = 105
+    # Arco: 7,32m y centrado en la linea de meta
+    V_arco = 7.32
+    # V_min y V_max son los palos del arco
+    V_min = (U_cancha - V_arco) / 2
+    V_max = (U_cancha + V_arco) / 2
+
+    # Buscamos el punto del segmento del arco mas cercano a la posicion del jugador
+    V_cercano = min(max(V, V_min), V_max)
+
+    # Distancia euclídea en el plano de la cancha
+    distancia = np.sqrt( (U - U_cancha)**2 + (V - V_cercano)**2)
+
+    return distancia
+
+# 4b: Debemos ubicar a todos los jugadores y dibujar un circulo de 1 metro de radio sobre el piso
+# Hay que definir el circulo en coordenadas de la cancha y proyectar sus puntos a la imagen mediante H.
+# 1) Identificar en la imagen los pies de cada jugador: Para cada jugador i tendremos un punto pi = [ui vi 1]
+# 2) Aplicar H^(-1) a cada punto para obtener sus coordenadas sobre el campo: para esto utilizamos la funcion transformarPuntoCancha
+# 3) Construir un circulo de radio 1 metro alrededor de cada posicion: Una vez que tenemos la posicion de un jugador (Ui,Vi) definimos un circulo mediante U = Ui + cos(ang) y V = Vi + sen(ang) porque (U-Ui)^2 + ( V-Vi)^2 = 1, es decir, la parametrizacion corresponde a un círculo de radio 1 metro
+# 4) Proyectar los puntos de esos circulos a la imagen usando H: armamos la funcion proyectarPuntoImagen para ellos
+# 5) Dibujar los circulos proyectados sobre la imagen
+
+"""
+    Proyecta un punto del mundo real (la cancha en el ejercicio) a coordenadas de imagen
+    H [U V 1] = [u v]
+
+    H: homografia del mundo real a la imagen
+    objPt: coordenadas (U, V) del punto
+
+    Devuelve las coordenadas (u, v) del punto en la imagen
+"""
+def proyectarPuntoImagen(H, objPt):
+
+    p = np.array([objPt[0], objPt[1], 1.0])
+    p_img = prodMat(H, p)
+
+    u = p_img[0] / p_img[2]
+    v = p_img[1] / p_img[2]
+
+    return np.array([u, v])
+
+"""
+    Ubica jugadores sobre la cancha y dibuja circulos de radio 1 metro proyectados sobre la imagen
+
+    H: homografia 
+    jugPts: lista de puntos (u, v) de los pies de los jugadores
+
+    Devuelve la lista de posiciones de los jugadores en coordenadas de la cancha
+"""
+def dibujarCirculosJugadores(H, jugPts):
+
+    posCancha = []
+
+    # Angulos para construir los circulos (2 * pi es una vuelta completa)
+    angulos = np.arange(0, 2 * math.pi, 0.02)
+
+    for punto in jugPts:
+
+        # Recuperamos la posicion del jugador en la cancha
+        U, V = transformarPuntoCancha(H, punto)
+        posCancha.append(np.array([U, V]))
+
+        # Construimos los puntos del circulo en coordenadas de cancha
+        ptsCirculo = []
+
+        for angulo in angulos:
+            U_circulo = U + math.cos(angulo)
+            V_circulo = V + math.sin(angulo)
+
+            puntoCancha = np.array([U_circulo, V_circulo])
+
+            # Proyectamos cada punto del circulo a la imagen
+            puntoImg = proyectarPuntoImagen(H, puntoCancha)
+            ptsCirculo.append(puntoImg)
+
+        ptsCirculo = np.array(ptsCirculo)
+
+        # Dibujamos el circulo sobre la fotografia
+        plt.plot(ptsCirculo[:, 0], ptsCirculo[:, 1], linewidth=2)
+
+        # Marca los pies del jugador
+        plt.scatter(punto[0], punto[1], s=20)
+
+    plt.show()
+
+    return posCancha
+
+#4c Trazar una recta paralela a la línea de fondo de la cancha que toque el pie del último defensor
+#  La recta se define en coordenadas de la cancha y se proyecta a la imagen mediante H
+# 1) Identificar puntos de referencia de la cancha y estimar la homografía H para la imagen
+# 2) Marcar el pie del ultimo defensor y recuperar su posición (Ud,Vd) en la cancha mediante H^(-1)
+# 3) Construir una recta paralela a la línea de fondo que pase por ese punto
+# 4) Proyectar la recta sobre la imagen mediante H
+# 5) Comparar las posiciones de los otros jugadores con esa linea
+
+"""
+    Genera puntos de la recta paralela a la linea de fondo que pasa por U = Ud.
+
+    Ud: Coordenada U del defensor en metros
+    Cantidad: Cantidad de puntos que se generan para representar la recta
+
+    Devuelve un arreglo de dimensiones (N, 2), donde cada fila contiene un punto [U, V] de la cancha
+"""
+def generarRectaCancha(Ud, cantidad=100):
+
+    # Cancha: 105 x 68 m
+    Vcancha = 68
+    valoresV = np.arange(0, Vcancha, Vcancha / cantidad)
+
+    puntos = []
+
+    for V in valoresV:
+        puntos.append([Ud, V])
+
+    return np.array(puntos)
+
+"""
+    Proyecta puntos de la cancha a la 
+    H: homografia
+    ptsCancha: puntos [U, V] de la cancha que se desean proyectar
+
+    Devuelve un arreglo de dimensiones (N, 2) con las coordenadas [u, v] de los  puntos proyectados en la imagen
+"""
+def proyectarRectaImagen(H, ptsCancha):
+
+    puntosImagen = []
+
+    for punto in ptsCancha:
+        puntoImg = proyectarPuntoImagen(H, punto)
+        puntosImagen.append(puntoImg)
+
+    return np.array(puntosImagen)
+
+"""
+    Compara las posiciones de los jugadores rivales con la recta que pasa por los pies del ultimo defensor, para determinar si estan adelantados segun el sentido de ataque.
+
+    H : homografia
+
+    puntoDefensorImg: Coordenadas [u, v] de los pies del último defensor en la imagen
+
+    puntosRivalesImg: Coordenadas [u, v] de los pies de los jugadores rivales en la imagen
+
+    atacaHaciaUPositivo:
+        True si los atacantes avanzan hacia U creciente
+        False si avanzan hacia U decreciente
+ """
+def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositivo=True):
+    
+    Ud, _ = transformarPuntoCancha(H, puntoDefensorImg)
+
+    resultados = []
+
+    for i, puntoImg in enumerate(puntosRivalesImg):
+        Uj, Vj = transformarPuntoCancha(H, puntoImg)
+
+        if atacaHaciaUPositivo:
+            adelantado = Uj > Ud
+        else:
+            adelantado = Uj < Ud
+
+        resultados.append({
+            "Jugador": i + 1,
+            "U": Uj,
+            "V": Vj,
+            "U Defendor": Ud,
+            "Adelantado?": "Si" if adelantado else "No" 
+        })
+
+    return resultados
+
 
 # Ejercicio 5
 #machan
