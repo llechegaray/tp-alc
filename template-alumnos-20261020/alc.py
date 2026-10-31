@@ -456,12 +456,12 @@ def QR_con_GS(A, tol=1e-12, retorna_nops=False):
     nops = 0
 
     for j in range(n):
-        uj = A[:, j].copy()
+        uj = A[:, j:j+1].copy()
 
         if j > 0:
             nops += j * (m * 2 - 1)
 
-            R[:j, j] = prodMat(traspuesta(Q[:, :j]), uj)
+            R[:j, j:j+1] = prodMat(traspuesta(Q[:, :j]), uj)
             nops += m * (2) - 1
 
             uj = uj - prodMat(Q[:, :j], R[:j, j])
@@ -473,7 +473,7 @@ def QR_con_GS(A, tol=1e-12, retorna_nops=False):
         if norm_uj < tol:
             return None
 
-        Q[:, j] = uj / norm_uj
+        Q[:, j:j+1] = uj / norm_uj
         nops += m
 
         R[j, j] = norm_uj
@@ -1046,7 +1046,7 @@ def calcularMatrizK2D(A):
     if B[0, 0] < 0: #Garantizamos que B sea definida positiva
         B = -B
 
-    L = calculaCholesky(B, tol=1e-10) # B = L @ L.T
+    L = calculaCholesky(B, atol=1e-10) # B = L @ L.T
 
     Lt = traspuesta(L) 
     K = inversa(Lt) # K = (L.T)^-1 
@@ -1058,6 +1058,8 @@ def obtenerPose2D(Hj, K):
 
     if Hj[2, 2] < 0: #(t_z > 0) Garantiza que el tablero quede delante de la cámara
         H = -Hj
+    else:
+        H = Hj
 
     c1, c2, c3 = H[:, 0], H[:, 1], H[:, 2]
 
@@ -1070,10 +1072,11 @@ def obtenerPose2D(Hj, K):
 
     r1 = lamb * k_c1
     r2 = lamb * k_c2
-    r3 = prod_vectorial(r1, r2)
+    r3 = prod_vectorial(r1, r2).reshape(3, 1)
     tj = lamb * k_c3
 
-    R_temp = np.array([r1, r2, r3]).T
+    R_temp = np.hstack([r1, r2, r3])
+    R_temp = traspuesta(R_temp)
 
     # Factorizacion QR por Gram schmit para asegurarnos que R cumpla ser ortonormal
     Q, _ = QR_con_GS(R_temp)
@@ -1334,7 +1337,7 @@ def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositiv
 
 #5a
 #Leer el archivo csv
-df = pd.read.csv('salguero/world_img_pts.csv', sep=';')
+df = pd.read_csv('salguero/world_img_pts.csv', sep=';')
 datos = np.asarray(df)
 
 objPts_a = datos[:, 1:3] #Coordenadas (X, Y) de los 5 puntos, Matirz de (5,2)
@@ -1356,12 +1359,12 @@ for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada u
 
     H_lista.append(Hk)
 
-    A_Zhang = armarA(H_lista)
-    K = calcularMatrizK2D(A_Zhang)
+A_Zhang = armarA(H_lista)
+K = calcularMatrizK2D(A_Zhang)
 
 #5b
 
-datos_b = np.loadtxt('salguero/gs10_09_point_correspondences_v5.txt')
+datos_b = np.loadtxt('salguero/gs_10_09_point_correspondences_v5.txt')
 
 objPts_b = traspuesta(datos_b[1:4, :])
 imgPts_b = traspuesta(datos_b[4:6, :])
@@ -1370,15 +1373,53 @@ mask_calle = (objPts_b[:, 2] == 0.0)
 objPts_calle = objPts_b[mask_calle, 0:2]  #solo (X, Y) de los puntos con Z = 0
 imgPts_calle = imgPts_b[mask_calle, :]
 
-Q_b = obtenerQ2d(imgPts_calle, objPts_calle)
+# Normalización isotrópica de Hartley, para no perder precisión por svd_reducida
+def normalizar2D(pts):
+    c = np.mean(pts, axis=0)
+    d = np.mean(np.sqrt((pts[:, 0] - c[0])**2 + (pts[:, 1] - c[1])**2))
+    s = np.sqrt(2.0) / d
+    T = np.array([[s, 0.0, -s * c[0]],
+                [0.0, s, -s * c[1]],
+                [0.0, 0.0, 1.0]])
+    pts_n = (pts - c) * s
+    return pts_n, T
+
+obj_norm, T_mundo = normalizar2D(objPts_calle)
+img_norm, T_img = normalizar2D(imgPts_calle)
+
+Q_b = obtenerQ2d(img_norm, obj_norm)
 
 _,_, V_b = svd_reducida(Q_b, k=9, tol=-1)
-h_b = V_b[:, -1]
-H_b = h_b.reshape((3, 3))
+h_b_norm = V_b[:, -1]
+H_b_norm = h_b_norm.reshape((3, 3))
+
+# Desnormalizamos H_b = T_img^(-1) * H_norm * T_mundo
+H_b = prodMat(prodMat(inversa(T_img), H_b_norm), T_mundo)
+H_b = H_b / H_b[2, 2]
 
 R_b, t_b = obtenerPose2D(H_b, K)
 
-#Falta reproyectar
+objPts_b_T = traspuesta(objPts_calle)
+unos = np.ones((1, objPts_calle.shape[0]))
+
+Proy_mundo_homografia = np.vstack((objPts_b_T, unos))
+
+Proy_homografia = prodMat(H_b, Proy_mundo_homografia)
+
+u_ReProy = Proy_homografia[0, :] / Proy_homografia[2, :]
+v_ReProy = Proy_homografia[1, :] / Proy_homografia[2, :]
+
+
+#Graficamos
+img = plt.imread('salguero/img_10_18_47_351.jpg')
+plt.figure(figsize=(12, 8))
+plt.imshow(img)
+plt.scatter(imgPts_b[:, 0], imgPts_b[:, 1], s=40, label='Originales')
+plt.scatter(u_ReProy, v_ReProy, marker='x', color='red', s=40)
+plt.legend()
+plt.title('Ejercicio 5b: Reproyección de los 51 puntos sobre Salguero y Güemes')
+plt.tight_layout()
+plt.show()
 
 #5c
 
