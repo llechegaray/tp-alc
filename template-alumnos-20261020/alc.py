@@ -1337,7 +1337,7 @@ def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositiv
 df = pd.read.csv('salguero/world_img_pts.csv', sep=';')
 datos = np.asarray(df)
 
-objPts = datos[:, 1:3] #Coordenadas (X, Y) de los 5 puntos, Matirz de (5,2)
+objPts_a = datos[:, 1:3] #Coordenadas (X, Y) de los 5 puntos, Matirz de (5,2)
 
 H_lista= []
 
@@ -1346,9 +1346,9 @@ H_lista= []
 for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada uno
     u = 4 + 2 * i
     v = 4 + 2 * i + 1
-    imgPts = datos[:, u:v+1] # (uk, vk) coordenadas de los 5 puntos en la imagen k
+    imgPts_a = datos[:, u:v+1] # (uk, vk) coordenadas de los 5 puntos en la imagen k
 
-    Q2d = obtenerQ2d(imgPts, objPts)
+    Q2d = obtenerQ2d(imgPts_a, objPts_a)
 
     _,_,V = svd_reducida(Q2d, k=9, tol=-1)
     h = V[:,-1] # el vector singular asociado al menor valor singular
@@ -1358,10 +1358,27 @@ for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada u
 
     A_Zhang = armarA(H_lista)
     K = calcularMatrizK2D(A_Zhang)
+
 #5b
 
-# MARIANO MOVELO A LA NOTEBOOK PLSSSS ADEMAS pd.read.csv NO ESTA ENTRE LAS FUNC PERMITIDAS
+datos_b = np.loadtxt('salguero/gs10_09_point_correspondences_v5.txt')
 
+objPts_b = traspuesta(datos_b[1:4, :])
+imgPts_b = traspuesta(datos_b[4:6, :])
+
+mask_calle = (objPts_b[:, 2] == 0.0)
+objPts_calle = objPts_b[mask_calle, 0:2]  #solo (X, Y) de los puntos con Z = 0
+imgPts_calle = imgPts_b[mask_calle, :]
+
+Q_b = obtenerQ2d(imgPts_calle, objPts_calle)
+
+_,_, V_b = svd_reducida(Q_b, k=9, tol=-1)
+h_b = V_b[:, -1]
+H_b = h_b.reshape((3, 3))
+
+R_b, t_b = obtenerPose2D(H_b, K)
+
+#Falta reproyectar
 
 #5c
 
