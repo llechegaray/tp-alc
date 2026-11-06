@@ -1427,6 +1427,8 @@ def calculoLambdaMu(I0, J0):
     Calcula los parametros lambda y mu de la ec. 16 
     Devuelve la parte real e imaginaria de las raices cuadradas del numero complejo C^2.
     """
+    I0 = np.asarray(I0, dtype=np.float64).flatten()
+    J0 = np.asarray(J0, dtype=np.float64).flatten()
     normaI2 = norma(I0, 2)**2
     normaJ2 = norma(J0, 2)**2
     I0J0 = producto_interno(I0, J0)
@@ -1435,8 +1437,8 @@ def calculoLambdaMu(I0, J0):
     C2 = (normaJ2 - normaI2) - 2j * I0J0
     C = np.sqrt(C2)
 
-    lam = np.real(C)
-    mu = np.imag(C)
+    lam = C.real
+    mu = C.imag
 
     return lam, mu
 
@@ -1444,23 +1446,22 @@ def calcularSalidaPOSIT(Is, Js, fx, m0, M0=None):
     """
     Devuelve la pose (i, j, k, Z0, R, t) correspondiente a una solucion (Is, Js) de POSIT.
     """
+    Is = np.asarray(Is, dtype=np.float64).flatten()
+    Js = np.asarray(Js, dtype=np.float64).flatten()
     normaI = norma(Is, 2)
     normaJ = norma(Js, 2)
     Z0 = fx / normaI
     i_vec = Is / normaI
     j_vec = Js / normaJ
-    k_vec = prod_vectorial(i_vec, j_vec)
-    R = np.zeros((3, 3))
-    R[0, :] = i_vec
-    R[1, :] = j_vec
-    R[2, :] = k_vec
+    k_vec = prod_vectorial(i_vec, j_vec).flatten()
+    R = np.vstack([i_vec, j_vec, k_vec])
 
     x0 = m0[0]
     y0 = m0[1]
     t = np.array([Z0 * x0 / fx, Z0 * y0 / fx, Z0])
 
     if M0 is not None and np.sum(np.abs(M0)) > 0:
-        t = t - prodMat(R, M0)
+        t = t - prodMat(R, M0).flatten()
 
     return i_vec, j_vec, k_vec, Z0, R, t
 
@@ -1475,13 +1476,13 @@ def evaluarPose(R, t, obj_vecs, img_vecs, K):
 
     for i in range(n):
         # Punto 3D a coordenadas de cámara
-        Pc = prodMat(R, obj_vecs[i]) + t
+        Pc = prodMat(R, obj_vecs[i]).flatten() + t
         
         if Pc[2] > 0:
             validas += 1
             
             # Proyección a imagen (usando K)
-            p_img_homog = prodMat(K, Pc)
+            p_img_homog = prodMat(K, Pc).flatten()
             u_proj = p_img_homog[0] / p_img_homog[2]
             v_proj = p_img_homog[1] / p_img_homog[2]
                 
@@ -1519,7 +1520,9 @@ def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt=20, atol=1e-4):
 
     # Pseudoinversa de A usando SVD reducida: A+ = V Sig^-1 U^T
     U_a, Sig_a, V_a = svd_reducida(A, k=2, tol=1e-12)
-    Sig_inv = np.diag(1.0 / Sig_a)
+    Sig_inv = np.zeros((2, 2))
+    Sig_inv[0, 0] = 1.0 / Sig_a[0]
+    Sig_inv[1, 1] = 1.0 / Sig_a[1]
     A_pinv = prodMat(prodMat(V_a, Sig_inv), traspuesta(U_a))
 
     # Vector normal unitario al plano de los puntos (nucleo de A)
@@ -1534,8 +1537,8 @@ def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt=20, atol=1e-4):
         b_u = x_img[1:] * (1.0 + eps) - m0[0]
         b_v = y_img[1:] * (1.0 + eps) - m0[1]
 
-        I0 = prodMat(A_pinv, b_u)
-        J0 = prodMat(A_pinv, b_v)
+        I0 = prodMat(A_pinv, b_u).flatten()
+        J0 = prodMat(A_pinv, b_v).flatten()
 
         lam, mu = calculoLambdaMu(I0, J0)
 
@@ -1570,7 +1573,6 @@ def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt=20, atol=1e-4):
         prev_rms = iter_best_rms
 
         # Actualizar factores de correccion de perspectiva eps_i
-        eps = prodMat(A, iter_best_k) / iter_best_Z0
+        eps = (prodMat(A, iter_best_k).flatten()) / iter_best_Z0
 
     return best_R, best_t
-
