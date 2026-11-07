@@ -383,12 +383,14 @@ def determinante(A):
         return None
     
     L, U, nops = calculaLU(A)
-    res = 1
+    if L is None or U is None:
+        return 0.0
+    res = 1.0
     
     for i in range(c):
         res *= U[i,i]
         
-    return res * ((-1)** nops)
+    return res
 
 # Calcula la factorizacion LDV de la matriz A, de forma tal que A = LDV, con L triangular inferior, D diagonal, 
 # y U triangular superior. En caso de que no se pueda factorizar retorna None.
@@ -598,7 +600,13 @@ def diagRH(A, tol=1e-15, K=1000):
     e1 = np.zeros(n)
     e1[0] = 1
 
-    Hv1 = np.eye(n) - 2 * producto_externo((e1-v1),(e1-v1)) / prodMat(e1-v1,e1-v1)
+    u = e1 - v1
+    nu = norma(u, 2)
+    if nu < 1e-12:
+        Hv1 = np.eye(n)
+    else:
+        u = u / nu
+        Hv1 = np.eye(n) - 2.0 * producto_externo(u, u)
 
     if n == 2:
         S = Hv1
@@ -900,7 +908,7 @@ def restri_para_matrices(L, B, inferior=True):
 ########### FUNCIONES PARA EL TP ###########
 
 # Ejercicio 2
-""""
+"""
 imgPts: array de (n, 2) con coordenadas (u, v) en pixeles.
 objPts: array de (n, 3) con coordenadas (U, V, W) en el mundo real.
 Devuelve Q creada a partir de la ecuación 6
@@ -924,7 +932,7 @@ def obtenerQ3d(imgPts, objPts):
 
     return Q
 
-""""
+"""
 Q: matriz creada a partir de la ecuación 6
 Devuelve la matriz de proyección M
 """
@@ -939,45 +947,79 @@ def resolverDLT3D(Q):
 
     return M
 
-""""
+"""
 M: matriz de proyección
 Devuelve la matriz de rotación R, el vector de traslación t y la matriz de parámetros intrínsecos K
 """
-def devolverMatricesCalibracion3d(M, restriccion=False):
-    #Basandonos en la sección 2.1, extraemos R, t y K:
-    #M=K[R|t]=[KR|Kt]
+def devolverMatricesCalibracion3d(M, restriccion=False, restriccion_escala=False, gamma_cero=False):
+    # Basandonos en la seccion 2.1, extraemos R, t y K mediante Cholesky:
+    # M = (1/rho) * K [R | t]
     KR = M[:, :3]
     Kt = M[:, 3]
 
     # Eliminamos R multiplicando la inversa traspuesta por si misma:
     # (KR^-1)^T * (KR^-1) = rho^2 * K^-T * K^-1
     inv_KR = inversa(KR)
-    A = prodMat(traspuesta(inv_KR), inv_KR)
+    if inv_KR is None:
+        return None, None, None
 
+    A = prodMat(traspuesta(inv_KR), inv_KR)
     # Cholesky: A = L * L^T, donde L = rho * K^-T
     L = calculaCholesky(A)
+    if L is None:
+        return None, None, None
+
     L_T = traspuesta(L)
     inv_LT = inversa(L_T)
+    if inv_LT is None:
+        return None, None, None
 
     # Como inv_LT = (1/rho) * K y K[2,2] = 1, recuperamos la escala rho
     rho = 1.0 / inv_LT[2, 2]
     K = inv_LT * rho
 
-    if Kt[2] * rho < 0:
-        rho = -rho
+    # Limpiar ceros estructurales y normalizar
+    K[1, 0] = 0.0
+    K[2, 0] = 0.0
+    K[2, 1] = 0.0
+    K[2, 2] = 1.0
 
     inv_K = inversa(K)
     R = prodMat(inv_K, rho * KR)
     t = prodMat(inv_K, rho * Kt)
-    
-    if restriccion in (True, 'k12'):
-        K[0, 1] = 0
+    if len(t.shape) > 1:
+        t = t.flatten()
 
-    if restriccion in (True, 'alpha'):
-        promedio_focal = (K[0, 0] + K[1, 1]) / 2
+    # Si la camara mira hacia atras (tz < 0), invertimos el signo global
+    if t[2] < 0:
+        R = -R
+        t = -t
+
+    # Asegurar orientacion derecha
+    if determinante(R) < 0:
+        R[2, :] = -R[2, :]
+
+    # Restricciones opcionales (b: escala isotropica, c: sesgo cero, d: ambas)
+    if restriccion or gamma_cero:
+        K[0, 1] = 0.0 # Gamma (sesgo) = 0
+    if restriccion or restriccion_escala:
+        promedio_focal = (K[0, 0] + K[1, 1]) / 2.0
         K[0, 0] = promedio_focal
         K[1, 1] = promedio_focal
 
+    if restriccion or gamma_cero or restriccion_escala:
+        inv_K = inversa(K)
+        R_approx = prodMat(inv_K, rho * KR)
+        Q_r, _ = QR_con_GS(traspuesta(R_approx))
+        R = traspuesta(Q_r)
+        t = prodMat(inv_K, rho * Kt)
+        if len(t.shape) > 1:
+            t = t.flatten()
+        if t[2] < 0:
+            R = -R
+            t = -t
+        if determinante(R) < 0:
+            R[2, :] = -R[2, :]
 
     return R, t, K
     
@@ -1071,23 +1113,28 @@ def obtenerPose2D(Hj, K):
     c1, c2, c3 = H[:, 0], H[:, 1], H[:, 2]
 
     K_inv = inversa(K)
-    k_c1 = prodMat(K_inv, c1)
-    k_c2 = prodMat(K_inv, c2)
-    k_c3 = prodMat(K_inv, c3)
+    k_c1 = prodMat(K_inv, c1).flatten()
+    k_c2 = prodMat(K_inv, c2).flatten()
+    k_c3 = prodMat(K_inv, c3).flatten()
 
-    lamb = 1 / norma(k_c1, 2) #Factor de escala
+    lamb = 1.0 / norma(k_c1, 2) #Factor de escala
 
     r1 = lamb * k_c1
     r2 = lamb * k_c2
-    r3 = prod_vectorial(r1, r2).reshape(3, 1)
+    r3 = prod_vectorial(r1, r2).flatten()
     tj = lamb * k_c3
 
-    R_temp = np.hstack([r1, r2, r3])
-    R_temp = traspuesta(R_temp)
-
-    # Factorizacion QR por Gram schmit para asegurarnos que R cumpla ser ortonormal
-    Q, _ = QR_con_GS(R_temp)
+    # Ensamblamos R_aprox con r1, r2, r3 como columnas y ortonormalizamos con GS
+    R_aprox = np.array([r1, r2, r3]).T
+    Q, _ = QR_con_GS(R_aprox)
     Rj = Q
+
+    if determinante(Rj) < 0:
+        Rj[:, 2] = -Rj[:, 2]
+
+    if tj[2] < 0:
+        Rj = -Rj
+        tj = -tj
 
     return Rj, tj
 
@@ -1337,6 +1384,18 @@ def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositiv
 
 # Ejercicio 5
 
+# Normalización isotrópica de Hartley, para no perder precisión por svd_reducida
+def normalizar2D(pts):
+    c = np.mean(pts, axis=0)
+    d = np.mean(np.sqrt((pts[:, 0] - c[0])**2 + (pts[:, 1] - c[1])**2))
+    s = np.sqrt(2.0) / d
+    T = np.array([[s, 0.0, -s * c[0]],
+                [0.0, s, -s * c[1]],
+                [0.0, 0.0, 1.0]])
+    pts_n = (pts - c) * s
+    return pts_n, T
+
+
 # Ejercicio 6
 
 def calculoLambdaMu(I0, J0):
@@ -1436,10 +1495,11 @@ def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt=20, atol=1e-4):
     n_pts = len(A)
 
     # Pseudoinversa de A usando SVD reducida: A+ = V Sig^-1 U^T
-    U_a, Sig_a, V_a = svd_reducida(A, k=2, tol=1e-12)
-    Sig_inv = np.zeros((2, 2))
-    Sig_inv[0, 0] = 1.0 / Sig_a[0]
-    Sig_inv[1, 1] = 1.0 / Sig_a[1]
+    U_a, Sig_a, V_a = svd_reducida(A, k=2, tol=-1)
+    k_svd = len(Sig_a)
+    Sig_inv = np.zeros((k_svd, k_svd))
+    for s_i in range(k_svd):
+        Sig_inv[s_i, s_i] = 1.0 / Sig_a[s_i]
     A_pinv = prodMat(prodMat(V_a, Sig_inv), traspuesta(U_a))
 
     # Vector normal unitario al plano de los puntos (nucleo de A)
@@ -1493,3 +1553,4 @@ def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt=20, atol=1e-4):
         eps = (prodMat(A, iter_best_k).flatten()) / iter_best_Z0
 
     return best_R, best_t
+
