@@ -598,7 +598,11 @@ def diagRH(A, tol=1e-15, K=1000):
     e1 = np.zeros(n)
     e1[0] = 1
 
-    Hv1 = np.eye(n) - 2 * producto_externo((e1-v1),(e1-v1)) / prodMat(e1-v1,e1-v1)
+    denominador = prodMat(e1-v1, e1-v1)
+    if np.abs(denominador) < 1e-15:
+        Hv1 = np.eye(n)
+    else:
+        Hv1 = np.eye(n) - 2 * producto_externo((e1-v1),(e1-v1)) / denominador
 
     if n == 2:
         S = Hv1
@@ -1083,7 +1087,6 @@ def obtenerPose2D(Hj, K):
     tj = lamb * k_c3
 
     R_temp = np.hstack([r1, r2, r3])
-    R_temp = traspuesta(R_temp)
 
     # Factorizacion QR por Gram schmit para asegurarnos que R cumpla ser ortonormal
     Q, _ = QR_con_GS(R_temp)
