@@ -1340,6 +1340,17 @@ def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositiv
 
 # Ejercicio 5
 
+# Normalización isotrópica de Hartley, para no perder precisión por svd_reducida
+def normalizar2D(pts):
+    c = np.mean(pts, axis=0)
+    d = np.mean(np.sqrt((pts[:, 0] - c[0])**2 + (pts[:, 1] - c[1])**2))
+    s = np.sqrt(2.0) / d
+    T = np.array([[s, 0.0, -s * c[0]],
+                [0.0, s, -s * c[1]],
+                [0.0, 0.0, 1.0]])
+    pts_n = (pts - c) * s
+    return pts_n, T
+
 # Ejercicio 6
 
 def calculoLambdaMu(I0, J0):
