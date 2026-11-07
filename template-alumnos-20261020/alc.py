@@ -953,23 +953,31 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
     # (KR^-1)^T * (KR^-1) = rho^2 * K^-T * K^-1
     inv_KR = inversa(KR)
     A = prodMat(traspuesta(inv_KR), inv_KR)
+
     # Cholesky: A = L * L^T, donde L = rho * K^-T
     L = calculaCholesky(A)
     L_T = traspuesta(L)
     inv_LT = inversa(L_T)
+
     # Como inv_LT = (1/rho) * K y K[2,2] = 1, recuperamos la escala rho
     rho = 1.0 / inv_LT[2, 2]
     K = inv_LT * rho
-    
+
+    if Kt[2] * rho < 0:
+        rho = -rho
+
     inv_K = inversa(K)
     R = prodMat(inv_K, rho * KR)
     t = prodMat(inv_K, rho * Kt)
     
-    if restriccion:
-        K[0, 1] = 0 # Gamma (sesgo) = 0
+    if restriccion in (True, 'k12'):
+        K[0, 1] = 0
+
+    if restriccion in (True, 'alpha'):
         promedio_focal = (K[0, 0] + K[1, 1]) / 2
         K[0, 0] = promedio_focal
         K[1, 1] = promedio_focal
+
 
     return R, t, K
     
@@ -1328,97 +1336,6 @@ def analizarPosiciones(H, puntoDefensorImg, puntosRivalesImg, atacaHaciaUPositiv
 
 
 # Ejercicio 5
-
-
-#machan
-
-#5a
-#Leer el archivo csv
-df = pd.read_csv('salguero/world_img_pts.csv', sep=';')
-datos = np.asarray(df)
-
-objPts_a = datos[:, 1:3] #Coordenadas (X, Y) de los 5 puntos, Matirz de (5,2)
-
-H_lista= []
-
-#Usamos Método de Zhang (Ejercicio 3 del TP) para obtener la matriz K
-
-for i in range(4): #Tenemos 4 puntos de vista, armamos una matriz HK para cada uno
-    u = 4 + 2 * i
-    v = 4 + 2 * i + 1
-    imgPts_a = datos[:, u:v+1] # (uk, vk) coordenadas de los 5 puntos en la imagen k
-
-    Q2d = obtenerQ2d(imgPts_a, objPts_a)
-
-    _,_,V = svd_reducida(Q2d, k=9, tol=-1)
-    h = V[:,-1] # el vector singular asociado al menor valor singular
-    Hk = h.reshape((3,3))
-
-    H_lista.append(Hk)
-
-A_Zhang = armarA(H_lista)
-K = calcularMatrizK2D(A_Zhang)
-
-#5b
-
-datos_b = np.loadtxt('salguero/gs_10_09_point_correspondences_v5.txt')
-
-objPts_b = traspuesta(datos_b[1:4, :])
-imgPts_b = traspuesta(datos_b[4:6, :])
-
-mask_calle = (objPts_b[:, 2] == 0.0)
-objPts_calle = objPts_b[mask_calle, 0:2]  #solo (X, Y) de los puntos con Z = 0
-imgPts_calle = imgPts_b[mask_calle, :]
-
-# Normalización isotrópica de Hartley, para no perder precisión por svd_reducida
-def normalizar2D(pts):
-    c = np.mean(pts, axis=0)
-    d = np.mean(np.sqrt((pts[:, 0] - c[0])**2 + (pts[:, 1] - c[1])**2))
-    s = np.sqrt(2.0) / d
-    T = np.array([[s, 0.0, -s * c[0]],
-                [0.0, s, -s * c[1]],
-                [0.0, 0.0, 1.0]])
-    pts_n = (pts - c) * s
-    return pts_n, T
-
-obj_norm, T_mundo = normalizar2D(objPts_calle)
-img_norm, T_img = normalizar2D(imgPts_calle)
-
-Q_b = obtenerQ2d(img_norm, obj_norm)
-
-_,_, V_b = svd_reducida(Q_b, k=9, tol=-1)
-h_b_norm = V_b[:, -1]
-H_b_norm = h_b_norm.reshape((3, 3))
-
-# Desnormalizamos H_b = T_img^(-1) * H_norm * T_mundo
-H_b = prodMat(prodMat(inversa(T_img), H_b_norm), T_mundo)
-H_b = H_b / H_b[2, 2]
-
-R_b, t_b = obtenerPose2D(H_b, K)
-
-objPts_b_T = traspuesta(objPts_calle)
-unos = np.ones((1, objPts_calle.shape[0]))
-
-Proy_mundo_homografia = np.vstack((objPts_b_T, unos))
-
-Proy_homografia = prodMat(H_b, Proy_mundo_homografia)
-
-u_ReProy = Proy_homografia[0, :] / Proy_homografia[2, :]
-v_ReProy = Proy_homografia[1, :] / Proy_homografia[2, :]
-
-
-#Graficamos
-img = plt.imread('salguero/img_10_18_47_351.jpg')
-plt.figure(figsize=(12, 8))
-plt.imshow(img)
-plt.scatter(imgPts_b[:, 0], imgPts_b[:, 1], s=40, label='Originales')
-plt.scatter(u_ReProy, v_ReProy, marker='x', color='red', s=40)
-plt.legend()
-plt.title('Ejercicio 5b: Reproyección de los 51 puntos sobre Salguero y Güemes')
-plt.tight_layout()
-plt.show()
-
-#5c
 
 # Ejercicio 6
 
