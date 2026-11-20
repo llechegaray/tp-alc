@@ -969,10 +969,6 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
 
     if Kt[2] * rho < 0:
         rho = -rho
-
-    inv_K = inversa(K)
-    R = prodMat(inv_K, rho * KR)
-    t = prodMat(inv_K, rho * Kt)
     
     if restriccion in (True, 'k12'):
         K[0, 1] = 0
@@ -982,16 +978,51 @@ def devolverMatricesCalibracion3d(M, restriccion=False):
         K[0, 0] = promedio_focal
         K[1, 1] = promedio_focal
 
+    inv_K = inversa(K)
+    R = prodMat(inv_K, rho * KR)
+    t = prodMat(inv_K, rho * Kt)    
 
     return R, t, K
+
+
+"""
+    Calcula el error de reproyeccion de los puntos 3D sobre la imagen
+
+    objPts: matriz con las coordenadas 3D de los puntos reales
+    imgPts: matriz con las coordenadas 2D de los puntos en la imagen
+    K: matriz de parametros intrinsecos
+    R: matriz de rotacion
+    t: vector de traslacion
+
+    Devuelve
+    errores: vector con el error de reproyeccion de cada punto en pixeles
+    error_medio: promedio de los errores de reproyeccion
+"""
+def calcularErrorReproyeccion(objPts, imgPts, K, R, t):
     
-    # Ejercicio 3   
-"""
-    3a)
-    Por Teorema de la Dimensión: Rg(Q) + dim(Nu(Q)) = 9. Para que el sistema homogéneo Q*h = 0 tenga una 
-    solución no nula única salvo por un factor de escala, el núcleo de Q debe tener dimensión 1. Por lo tanto,
-    Rg(Q) = 9 - 1 = 8. La matriz Q debe tener rango 8. Lo cual requiere que mínimo n = 4
-"""
+    # Construimos la matriz de proyeccion M = K[R|t]
+    Rt = np.hstack((R, t.reshape(3, 1)))
+    M = prodMat(K, Rt)
+
+    # P = [X Y Z]^T => P = [X Y Z 1]^T
+    unos = np.ones((1, objPts.shape[0]))
+    objPts_h = np.vstack((objPts.T, unos))
+
+    proy = prodMat(M ,objPts_h)
+
+    # Normalizamos
+    u_proy = proy[0, :] / proy[2, :]
+    v_proy = proy[1, :] / proy[2, :]
+
+    # Calculamos el error de cada punto
+    errores = np.sqrt( (imgPts[:, 0] - u_proy)**2 + (imgPts[:, 1] - v_proy)**2)
+
+    error_medio = np.mean(errores)
+
+    return errores, error_medio
+    
+
+# Ejercicio 3   
 
 def obtenerQ2d(imgPts, objPts):
     n = imgPts.shape[0]
